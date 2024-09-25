@@ -1,6 +1,12 @@
 import streamlit as st
 import hmac
 from anthropic import Anthropic
+from openai import OpenAI
+from transformers import VitsModel, AutoTokenizer
+import torch
+import numpy as np
+import scipy.io.wavfile
+import io
 
 def check_password():
     """Returns `True` if the user had the correct password."""
@@ -33,6 +39,17 @@ if not check_password():
 API_KEY = st.secrets["anthropic_api_key"]
 client = Anthropic(api_key=API_KEY)
 
+OPENAI_API_KEY = st.secrets["openai_api_key"]
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
+
+@st.cache_resource
+def load_tts_model():
+    model = VitsModel.from_pretrained("facebook/mms-tts-swh")
+    tokenizer = AutoTokenizer.from_pretrained("facebook/mms-tts-swh")
+    return model, tokenizer
+
+tts_model, tts_tokenizer = load_tts_model()
+
 def generate_text(topic, difficulty, content_length, include_examples, language_style, include_visuals):
     # Construct the prompt based on user inputs
     prompt = f"Kwa Kiswahili {language_style.lower()}, eleza mada ifuatayo kwa mwanafunzi {difficulty}: {topic}."
@@ -60,8 +77,55 @@ def generate_text(topic, difficulty, content_length, include_examples, language_
         generated_text = response.content[0].text
         return generated_text.strip()
     except Exception as e:
-        st.error(f"Hitilafu wakati wa kizazi cha maandishi: {e}")
+        st.error(f"Hitilafu wakati wa kuzalisha maandishi: {e}")
 
+def generate_summary(text):
+    # Construct a prompt to summarize the text
+    summary_prompt = f"Fupisha maelezo yafuatayo kwa Kiswahili: {text}"
+    
+    # Use the language model to generate the summary
+    try:
+        response = client.messages.create(
+            model="claude-3-sonnet-20240229",
+            max_tokens=150,
+            messages=[{"role": "user", "content": summary_prompt}]
+        )
+        summary_text = response.content[0].text.strip()
+        return summary_text
+    except Exception as e:
+        st.error(f"Hitilafu wakati wa kuzalisha muhtasari: {e}")
+        return None
+
+def text_to_speech(text):
+    inputs = tts_tokenizer(text, return_tensors="pt")
+    with torch.no_grad():
+        output = tts_model(**inputs).waveform
+
+    # Convert waveform to audio data
+    output_numpy = output.cpu().numpy().reshape(-1)
+    output_scaled = np.int16(output_numpy * 32767)
+
+    # Save to in-memory buffer
+    sample_rate = tts_model.config.sampling_rate
+    audio_buffer = io.BytesIO()
+    scipy.io.wavfile.write(audio_buffer, rate=sample_rate, data=output_scaled)
+    audio_buffer.seek(0)  # Reset buffer pointer to the beginning
+    return audio_buffer
+
+def generate_image(prompt):
+    try:
+        response = openai_client.images.generate(
+            model="dall-e-3",
+            prompt=prompt,
+            size="1024x1024",
+            quality="standard",
+            n=1,
+        )
+        image_url = response.data[0].url
+        return image_url
+    except Exception as e:
+        st.error(f"Hitilafu wakati wa kuzalisha picha: {e}")
+        return None
 
 st.title("STEM Education Content Generator for Kiswahili")
 
@@ -102,9 +166,36 @@ include_visuals = st.checkbox("Pendekeza visaidizi vya kuona")
 if st.button("Zalisha Maudhui"):
     with st.spinner("Inazalisha maudhui, tafadhali subiri..."):
         # Generate text
-        text = generate_text(topic, difficulty, content_length, include_examples, language_style, include_visuals)
+        text = generate_text(
+            topic,
+            difficulty,
+            content_length,
+            include_examples,
+            language_style,
+            include_visuals
+        )
         if text:
             st.subheader("Maandishi Yaliyotengenezwa:")
             st.write(text)
+            
+            summary_text = generate_summary(text)
+            with st.spinner("Inazalisha sauti, tafadhali subiri..."):
+                audio_data = text_to_speech(summary_text)
+                if audio_data:
+                    st.subheader("Sauti:")
+                    st.audio(audio_data, format='audio/wav')
+                else:
+                    st.error("Hitilafu imetokea wakati wa kuzalisha sauti.")
+
+            # Optionally, handle image generation if needed
+            if include_visuals:
+                with st.spinner("Inazalisha picha, tafadhali subiri..."):
+                    image_prompt = f"Picha inayoonyesha {topic} kwa wanafunzi wa shule ya msingi."
+                    image_url = generate_image(image_prompt)
+                    if image_url:
+                        st.subheader("Picha Inayohusiana:")
+                        st.image(image_url)
+                    else:
+                        st.error("Hitilafu imetokea wakati wa kuzalisha picha.")
         else:
-            st.error("Hitilafu imetokea wakati wa kizazi cha maudhui.")
+            st.error("Hitilafu imetokea wakati wa kuzalisha maudhui.")

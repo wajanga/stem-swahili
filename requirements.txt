@@ -1,2 +1,6 @@
 streamlit
 anthropic
+openai
+transformers
+torch
+scipy
