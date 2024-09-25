@@ -161,7 +161,7 @@ include_examples = st.checkbox("Jumuisha mifano na shughuli za vitendo")
 language_styles = ["Rasmi", "Maongezi"]
 language_style = st.selectbox("Chagua mtindo wa lugha:", language_styles)
 
-include_visuals = st.checkbox("Pendekeza visaidizi vya kuona")
+include_visuals = st.checkbox("Pendekeza picha au mchoro")
 
 if st.button("Zalisha Maudhui"):
     with st.spinner("Inazalisha maudhui, tafadhali subiri..."):
