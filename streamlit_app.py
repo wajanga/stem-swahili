@@ -39,7 +39,7 @@ if not check_password():
 API_KEY = st.secrets["anthropic_api_key"]
 client = Anthropic(api_key=API_KEY)
 
-OPENAI_API_KEY = st.secrets["openai_api_key"]
+OPENAI_API_KEY = st.secrets["open_ai_key"]
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 @st.cache_resource
